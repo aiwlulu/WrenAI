@@ -1,0 +1,95 @@
+# zeabur.yaml - Wren AI Deployment Configuration for Zeabur
+
+# 1. Define the database
+databases:
+  - type: POSTGRES
+    # Name the database for referencing in services
+    name: WREN-DB
+
+# 2. Define all required services
+services:
+  # Frontend UI Service
+  - name: wren-ui
+    # Specify the source from a Dockerfile located in GitHub
+    source:
+      type: dockerfile
+      # Zeabur can parse docker-compose.yaml and find the corresponding service
+      file: ./docker/docker-compose.yaml
+      # Specify the service name to build
+      context: wren-ui
+    # Assign a public domain to this service
+    domains:
+      # Zeabur will auto-generate a subdomain
+      - name: wren-ui 
+    # Set environment variables
+    env:
+      # The UI needs the URL of the backend service
+      - key: WREN_AI_SERVICE_URL
+        # Use Zeabur's template variable to get the backend's public domain
+        value: ${{ services.wren-ai-service.domains[0].name }}
+      - key: PORT
+        value: "3000"
+
+  # Backend API Service
+  - name: wren-ai-service
+    source:
+      type: dockerfile
+      file: ./docker/docker-compose.yaml
+      context: wren-ai-service
+    domains:
+      - name: wren-ai-service
+    env:
+      # Connect to the Wren Engine service (internal communication)
+      - key: WREN_ENGINE_ENDPOINT
+        value: http://${{ services.wren-engine.name }}:8080
+      # Connect to the PostgreSQL database defined above
+      - key: DATABASE_URL
+        value: ${{ databases.WREN-DB.connectionURI }}
+      # Set the LLM provider, defaults to openai
+      - key: LLM_PROVIDER
+        value: "openai"
+      # Recommended to set OPENAI_API_KEY in Zeabur dashboard after deployment
+      - key: OPENAI_API_KEY
+        value: "" 
+      - key: PORT
+        value: "8080"
+
+  # Wren Query Engine Service
+  - name: wren-engine
+    source:
+      type: dockerfile
+      file: ./docker/docker-compose.yaml
+      context: wren-engine
+    env:
+      - key: PORT
+        value: "8080"
+      # Connect to the PostgreSQL database defined above
+      - key: WREN_DATASOURCE_TYPE
+        value: POSTGRES
+      - key: WREN_DATASOURCE_HOST
+        value: ${{ databases.WREN-DB.host }}
+      - key: WREN_DATASOURCE_PORT
+        value: ${{ databases.WREN-DB.port }}
+      - key: WREN_DATASOURCE_USERNAME
+        value: ${{ databases.WREN-DB.username }}
+      - key: WREN_DATASOURCE_PASSWORD
+        value: ${{ databases.WREN-DB.password }}
+      - key: WREN_DATASOURCE_DATABASE
+        value: ${{ databases.WREN-DB.database }}
+        
+  # Ibis Service
+  - name: ibis-server
+    source:
+      type: dockerfile
+      file: ./docker/docker-compose.yaml
+      context: ibis-server
+    env:
+      - key: WREN_ENGINE_ENDPOINT
+        value: http://${{ services.wren-engine.name }}:8080
+
+  # Qdrant Vector Database Service
+  - name: qdrant
+    source:
+      type: dockerfile
+      file: ./docker/docker-compose.yaml
+      context: qdrant
